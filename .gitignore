@@ -1,0 +1,6 @@
+.venv/
+.detail-read/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.pdf

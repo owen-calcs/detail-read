@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "detail-read",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--quiet", "uvicorn", "detail_read.app:app", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

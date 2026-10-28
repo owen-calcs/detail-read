@@ -1,0 +1,29 @@
+[project]
+name = "detail-read"
+version = "0.1.0"
+description = "Read metric steel connection drawings (OCR), convert to imperial, and solve on Calcs.com connectionshub"
+readme = "README.md"
+authors = [
+    { email = "owen.brasier@calcs.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.162.0",
+    "mcp>=2.3.0",
+    "pymupdf>=2.0",
+    "pytesseract>=0.3.13",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+detail-read = "detail_read.app:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
