@@ -23,13 +23,30 @@ uv sync
 uv run detail-read
 ```
 
-Open http://127.0.0.1:8000 and drop in a PDF.
+Open http://127.0.0.1:8000, click **Add API key** (top right), paste your connectionshub API key, and drop in a PDF.
 
-### connectionshub key
+### connectionshub API key
 
-The backend talks to `https://api.calcs.com/mcp` with the connectionshub key. It uses `CONNECTIONSHUB_API_KEY` if set,
-otherwise the key already configured for the `connectionshub` MCP server in `~/.claude.json`. A general Calcs.com key
-will not do: it sees a different calculator catalog.
+Solving needs a Calcs.com **connectionshub** API key. A general Calcs.com key won't work, because it sees a different
+calculator catalog. You can supply it two ways:
+
+- **In the app (per user).** Click the key button in the header and paste your key. It is stored in your browser's
+  local storage, sent with each request to this Detail Read server as `X-Connectionshub-Key`, and used for that
+  request only. The server never writes it to disk. Calculations go into your own account, in a "Detail Read (PDF OCR)" project.
+- **On the server (default).** Set `CONNECTIONSHUB_API_KEY`, or configure a `connectionshub` MCP server in Claude Code
+  (`~/.claude.json`). A key entered in the app takes precedence.
+
+Uploading and reading drawings works without a key; only solving needs one. Run Detail Read on your own machine or a
+server you trust, because the server sees the key you enter.
+
+## Solving
+
+- **One detail:** pick a detail on the left, adjust the calculator, sections or loads if needed, and click
+  **Solve on connectionshub**. The highest-confidence detail is solved automatically after upload.
+- **Solve all:** solves every detail with a detected calculator, using the detected sections and loads, four at a time.
+  Each detail in the list gets a pass/fail badge and its governing load. Details already solved are skipped (once
+  everything is solved, the button re-solves all). You can stop a run part-way. Each solve creates a calculation in
+  your project, so a large drawing set creates many.
 
 ## How it decides
 
@@ -46,7 +63,8 @@ will not do: it sees a different calculator catalog.
 - **Governing load.** This is the calculator's governing load combination with its demand when it reports one, and
   otherwise the largest demand. It is shown alongside the governing check (`summaryCheckReferenceId`) and utilization.
 
-Every solve creates a calculation in one "Detail Read (PDF OCR)" project, whose ID is cached in `.detail-read/state.json`.
+Every solve creates a calculation in a "Detail Read (PDF OCR)" project, one project per API key. Project IDs are cached in
+`.detail-read/state.json` under a hash of the key, never the key itself.
 
 ## Layout
 

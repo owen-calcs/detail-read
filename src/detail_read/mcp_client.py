@@ -29,27 +29,54 @@ def _claude_config_key() -> str | None:
     return (server.get("headers") or {}).get("Authorization")
 
 
-def _auth_header() -> dict[str, str]:
+class MissingKeyError(McpError):
+    pass
+
+
+class KeyRejectedError(McpError):
+    pass
+
+
+def server_key() -> str | None:
+    """A key configured on the server: CONNECTIONSHUB_API_KEY, else the Claude Code connectionshub MCP config."""
+    return os.environ.get("CONNECTIONSHUB_API_KEY") or _claude_config_key()
+
+
+def _auth_header(api_key: str | None) -> dict[str, str]:
     # connectionshub is scoped to the connection calculators, so it needs its own key,
-    # not a general Calcs.com one.
-    key = os.environ.get("CONNECTIONSHUB_API_KEY") or _claude_config_key()
+    # not a general Calcs.com one. A key the user entered in the UI wins over the server's.
+    key = (api_key or "").strip() or server_key()
     if not key:
-        raise McpError(
-            "No connectionshub key: set CONNECTIONSHUB_API_KEY or configure the connectionshub MCP server in Claude Code."
-        )
+        raise MissingKeyError("No connectionshub API key: enter yours in the app, or set CONNECTIONSHUB_API_KEY.")
     if not key.lower().startswith("bearer "):
         key = f"Bearer {key}"
     return {"Authorization": key}
 
 
 @asynccontextmanager
-async def session():
-    async with create_mcp_http_client(headers=_auth_header()) as http:
+async def session(api_key: str | None = None):
+    async with create_mcp_http_client(headers=_auth_header(api_key)) as http:
         async with streamable_http_client(MCP_URL, http_client=http) as streams:
             read, write = streams[0], streams[1]
             async with ClientSession(read, write) as s:
-                await s.initialize()
+                try:
+                    await s.initialize()
+                except Exception as e:
+                    if await _key_rejected(http):
+                        raise KeyRejectedError("connectionshub rejected the API key.") from e
+                    raise
                 yield s
+
+
+async def _key_rejected(http) -> bool:
+    """The MCP SDK hides HTTP status codes, so ask the endpoint directly whether it refused the key."""
+    probe = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "detail-read", "version": "0"}}}
+    try:
+        r = await http.post(MCP_URL, json=probe, headers={"Accept": "application/json, text/event-stream"})
+    except Exception:
+        return False
+    return r.status_code in (401, 403)
 
 
 async def call(s: ClientSession, tool: str, **args: Any) -> Any:

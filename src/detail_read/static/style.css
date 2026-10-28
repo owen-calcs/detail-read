@@ -34,6 +34,22 @@ body { margin: 0; background: var(--bg); height: 100vh; display: flex; flex-dire
 .brand { font-weight: 700; font-size: 16px; }
 .brand .sub { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 8px; }
 .status { color: var(--muted); font-size: 13px; }
+.bar-right { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.keybox { position: relative; }
+.key-btn { font: inherit; font-size: 12.5px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.key-btn::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.key-btn.user::before { background: var(--pass); }
+.key-btn.server::before { background: var(--accent); }
+.key-btn.missing { border-color: var(--warn); color: var(--warn); }
+.key-btn.missing::before { background: var(--warn); }
+.key-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; width: 320px; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.key-panel label { font-weight: 600; font-size: 13px; }
+.key-panel input { display: block; width: 100%; margin-top: 6px; padding: 7px 9px; font: inherit; font-family: ui-monospace, monospace; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.key-help { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.45; }
+.key-help.err { color: var(--fail); }
+.key-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.key-actions .primary { width: auto; margin: 0; padding: 7px 14px; }
+button.link { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; }
 
 .layout { flex: 1; display: grid; grid-template-columns: 290px 1fr 400px; min-height: 0; }
 .left, .right { background: var(--panel); overflow: auto; padding: 14px; }
@@ -49,6 +65,20 @@ body { margin: 0; background: var(--bg); height: 100vh; display: flex; flex-dire
 .progress { position: relative; height: 26px; margin-top: 12px; border-radius: 6px; background: var(--bg); overflow: hidden; }
 .progress .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--accent) 25%, transparent); transition: width .3s; }
 .progress .label { position: relative; display: block; line-height: 26px; padding: 0 10px; font-size: 12.5px; }
+
+.solve-all { margin-top: 12px; }
+.solve-all button.primary { margin-top: 0; }
+.solve-all button.secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.sa-summary { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.sa-summary b.pass { color: var(--pass); }
+.sa-summary b.fail { color: var(--fail); }
+.sa-summary b.err { color: var(--warn); }
+.badge { float: right; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 99px; color: #fff; margin-left: 6px; }
+.badge.pass { background: var(--pass); }
+.badge.fail { background: var(--fail); }
+.badge.error, .badge.not_evaluated, .badge.unknown { background: var(--warn); }
+.badge.running { background: var(--accent); }
+.detail-item .gl { color: var(--ink); font-size: 12px; margin-top: 2px; font-weight: 600; }
 
 .pages { margin-top: 14px; }
 .page-group { margin-bottom: 10px; }

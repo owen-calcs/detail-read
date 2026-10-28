@@ -17,6 +17,8 @@ ROLE_LABELS = {
     "branch": ("first branch section", "branch section"),
     "brace": ("brace section",),
 }
+FORCE_UNITS = re.compile(r"(kip|kN|lbf?)(\s*[*·]?\s*(ft|in|m))?", re.I)
+
 # Sign the connection calculators use for a tensile axial load (confirmed against a live solve).
 AXIAL_SIGN = 1
 
@@ -227,8 +229,10 @@ def summarise(definition: dict, result: dict) -> dict:
     numeric = {r: v for r, v in res.items() if isinstance(v, (int, float)) and not isinstance(v, bool) and r in outputs}
 
     def is_demand(r: str) -> bool:
+        # Forces and moments only: "Required Concrete Cover" (in) is not a load.
         label = outputs[r].get("label") or ""
-        return ("Demand" in label or label.startswith("Required")) and outputs[r].get("units") is not None
+        units = outputs[r].get("units") or ""
+        return ("Demand" in label or label.startswith("Required")) and FORCE_UNITS.fullmatch(units.strip()) is not None
 
     governing = []
     for ref, o in outputs.items():

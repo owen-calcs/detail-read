@@ -59,3 +59,13 @@ def test_summarise_pairs_governing_combination_with_its_demand():
     assert s["governingLoad"]["referenceId"] == "V_u" and s["governingLoad"]["value"] == 26.977
     assert s["utilization"] == 0.556 and s["status"] == "pass"
     assert s["governingCheck"]["label"] == "Bolt Capacity in the Shear Connection"
+
+
+def test_summarise_ignores_required_geometry_outputs():
+    definition = {"outputs": [
+        {"referenceId": "c_req", "label": "Required Concrete Cover from Anchor Rods", "units": "in"},
+        {"referenceId": "Dw", "label": "Governing Weld Demand", "units": "kip"},
+    ]}
+    s = calc.summarise(definition, {"results": {"c_req": 3.0, "Dw": 89.9}, "inputs": {}})
+    assert s["governingLoad"]["referenceId"] == "Dw"
+    assert [d["referenceId"] for d in s["demands"]] == ["Dw"]

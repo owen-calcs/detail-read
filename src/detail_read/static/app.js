@@ -12,7 +12,77 @@ const LOAD_FIELDS = [
 const ROLE_LABEL = { beam: "Beam", column: "Column / support", girder: "Girder", chord: "Chord", branch: "Branch", brace: "Brace" };
 
 const $ = (s) => document.querySelector(s);
-const state = { job: null, page: null, detail: null, calculators: [], calcInfo: {}, solving: false };
+const state = { job: null, page: null, detail: null, calculators: [], calcInfo: {}, solving: false, serverKey: false };
+
+// ---------- connectionshub API key ----------
+// Each user's key lives in their own browser and rides along on requests that reach connectionshub.
+
+const KEY_STORE = "detailRead.connectionshubKey";
+
+function getKey() {
+  try { return localStorage.getItem(KEY_STORE) || ""; } catch { return ""; }
+}
+
+function setKey(v) {
+  try { v ? localStorage.setItem(KEY_STORE, v) : localStorage.removeItem(KEY_STORE); } catch { /* private mode: key lasts this page only */ }
+  state.sessionKey = v;
+}
+
+function currentKey() { return getKey() || state.sessionKey || ""; }
+
+async function api(path, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  const key = currentKey();
+  if (key) headers.set("X-Connectionshub-Key", key);
+  const r = await fetch(path, { ...opts, headers });
+  if (r.status === 401) {
+    const msg = (await r.clone().json().catch(() => ({}))).detail || "connectionshub needs an API key.";
+    openKeyPanel(msg);
+  }
+  return r;
+}
+
+function renderKeyButton() {
+  const b = $("#key-btn");
+  const mine = !!currentKey();
+  b.className = `key-btn ${mine ? "user" : state.serverKey ? "server" : "missing"}`;
+  b.textContent = mine ? "API key: yours" : state.serverKey ? "API key: server default" : "Add API key";
+  b.title = mine ? "Calculations run in your connectionshub account" : state.serverKey ? "Using the key configured on this server; add yours to use your own account" : "Needed to solve on connectionshub";
+}
+
+function openKeyPanel(message, isError = !!message) {
+  const p = $("#key-panel");
+  p.classList.remove("hidden");
+  $("#key-btn").setAttribute("aria-expanded", "true");
+  const help = $("#key-help");
+  help.classList.toggle("err", isError);
+  help.textContent = message || "Saved in this browser only and sent only to this Detail Read server, which uses it to run calculations in your Calcs.com connectionshub account.";
+  $("#key-input").value = currentKey();
+  $("#key-input").focus();
+}
+
+function closeKeyPanel() {
+  $("#key-panel").classList.add("hidden");
+  $("#key-btn").setAttribute("aria-expanded", "false");
+}
+
+$("#key-btn").addEventListener("click", () => ($("#key-panel").classList.contains("hidden") ? openKeyPanel() : closeKeyPanel()));
+$("#key-panel").addEventListener("submit", (e) => {
+  e.preventDefault();
+  setKey($("#key-input").value.trim());
+  state.calculators = []; state.calcInfo = {};
+  closeKeyPanel();
+  renderKeyButton();
+  if (state.detail) renderCalculatorSelect(state.detail.d);
+});
+$("#key-clear").addEventListener("click", () => { setKey(""); $("#key-input").value = ""; closeKeyPanel(); renderKeyButton(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeKeyPanel(); });
+
+fetch("/api/config").then((r) => r.json()).then((c) => {
+  state.serverKey = c.serverKey;
+  renderKeyButton();
+  if (!c.serverKey && !currentKey()) openKeyPanel("Add your connectionshub API key to solve connections. You can still upload and read drawings without it.", false);
+}).catch(renderKeyButton);
 
 // ---------- upload & polling ----------
 
@@ -59,8 +129,121 @@ async function poll(id) {
   const nDetails = job.pages.reduce((n, p) => n + p.details.length, 0);
   setStatus(`${job.filename}: ${job.pages.length} pages, ${nDetails} connection details found`);
   renderPageList();
+  renderSolveAll();
+  if (job.solveAll && job.solveAll.status === "running") pollSolveAll();
   if (job.best) selectDetail(job.best.page, job.best.detail, true);
   else if (job.pages.length) renderPage(0);
+}
+
+// ---------- solve all ----------
+
+function solvableKeys() {
+  return state.job.pages.flatMap((p) => p.details.filter((d) => d.candidates.length).map((d) => `${p.index}:${d.id}`));
+}
+
+function renderSolveAll() {
+  const job = state.job;
+  const wrap = $("#solve-all");
+  const keys = solvableKeys();
+  if (!keys.length) return wrap.classList.add("hidden");
+  wrap.classList.remove("hidden");
+  const results = job.results || {};
+  const run = job.solveAll;
+  const running = run && run.status === "running";
+  const remaining = keys.filter((k) => !results[k]).length;
+
+  const btn = $("#solve-all-btn");
+  // A single solve in flight isn't in results yet; starting a batch now would solve that detail twice.
+  btn.disabled = state.solving && !running;
+  btn.classList.toggle("secondary", running);
+  if (running) btn.textContent = "Stop after current solves";
+  else if (remaining) btn.textContent = `Solve all ${remaining} detected connection${remaining === 1 ? "" : "s"}`;
+  else btn.textContent = "Re-solve all with detected values";
+
+  const prog = $("#solve-all-progress");
+  prog.classList.toggle("hidden", !running);
+  if (running) {
+    prog.querySelector(".fill").style.width = run.total ? `${(100 * run.done) / run.total}%` : "0";
+    prog.querySelector(".label").textContent = `Solved ${run.done} of ${run.total} on connectionshub…`;
+  }
+
+  const statuses = keys.map((k) => results[k] && results[k].summary.status).filter(Boolean);
+  const pass = statuses.filter((s) => s === "pass").length;
+  const fail = statuses.filter((s) => s === "fail").length;
+  const errors = run ? Object.keys(run.errors).length : 0;
+  const other = statuses.length - pass - fail;
+  $("#solve-all-summary").innerHTML = statuses.length || errors
+    ? `<b class="pass">${pass} pass</b> · <b class="fail">${fail} fail</b>${other ? ` · ${other} no verdict` : ""}${errors ? ` · <b class="err">${errors} error${errors === 1 ? "" : "s"}</b>` : ""} — ${statuses.length} of ${keys.length} solved`
+    : `${keys.length} of ${state.job.pages.reduce((n, p) => n + p.details.length, 0)} details have a detected calculator. Each solve creates a calculation in your connectionshub project.`;
+  updateBadges();
+}
+
+$("#solve-all-btn").addEventListener("click", async () => {
+  const job = state.job;
+  const run = job.solveAll;
+  if (run && run.status === "running") {
+    await fetch(`/api/jobs/${job.id}/solve-all/cancel`, { method: "POST" });
+    $("#solve-all-btn").disabled = true;
+    $("#solve-all-btn").textContent = "Stopping…";
+    return;
+  }
+  const keys = solvableKeys();
+  const remaining = keys.filter((k) => !(job.results || {})[k]).length;
+  const resolve = remaining === 0;
+  const n = resolve ? keys.length : remaining;
+  if (!confirm(`Solve ${n} connection${n === 1 ? "" : "s"} on connectionshub using the detected calculator, sections and loads?\n\n` +
+    `This creates ${n} calculation${n === 1 ? "" : "s"} in your Detail Read project. They can't be deleted from here.`)) return;
+  const r = await api(`/api/jobs/${job.id}/solve-all?skip_solved=${!resolve}`, { method: "POST" });
+  const data = await r.json();
+  if (!r.ok) return setStatus(data.detail || "Solve all failed to start", true);
+  job.solveAll = data;
+  renderSolveAll();
+  pollSolveAll();
+});
+
+async function pollSolveAll() {
+  const r = await fetch(`/api/jobs/${state.job.id}`);
+  if (!r.ok) return;
+  const fresh = await r.json();
+  state.job.results = fresh.results || {};
+  state.job.solveAll = fresh.solveAll;
+  renderSolveAll();
+  // Show the result for the open detail as soon as it lands.
+  if (state.detail && !state.solving) {
+    const key = `${state.detail.page}:${state.detail.d.id}`;
+    const res = state.job.results[key];
+    const shown = $("#result").dataset.key === key && $("#result").dataset.sheet === (res && res.summary.sheetId);
+    if (res && !shown) renderResult(res, key);
+  }
+  const run = fresh.solveAll;
+  if (run && run.status === "running") setTimeout(pollSolveAll, 2000);
+  else if (run && run.fatal) { setStatus(`Solve all stopped: ${run.fatal}`, true); openKeyPanel(run.fatal); }
+  else if (run) setStatus(`Solve all ${run.status}: ${run.done} of ${run.total} processed`);
+}
+
+function updateBadges() {
+  const results = state.job.results || {};
+  const run = state.job.solveAll;
+  const running = new Set(run && run.status === "running" ? run.running : []);
+  document.querySelectorAll(".detail-item").forEach((b) => {
+    const k = b.dataset.key;
+    const res = results[k];
+    const err = run && run.errors[k];
+    const badge = b.querySelector(".badge");
+    const gl = b.querySelector(".gl");
+    if (running.has(k)) {
+      badge.className = "badge running"; badge.textContent = "solving";
+    } else if (res) {
+      badge.className = `badge ${res.summary.status}`; badge.textContent = res.summary.status;
+    } else if (err) {
+      badge.className = "badge error"; badge.textContent = "error"; badge.title = err;
+    } else {
+      badge.className = "badge hidden";
+    }
+    const g = res && res.summary.governingLoad;
+    gl.textContent = g ? `${fmt(g.value, g.units)} — ${g.label}` : "";
+    gl.classList.toggle("hidden", !g);
+  });
 }
 
 function showProgress(done, total) {
@@ -92,9 +275,10 @@ function renderPageList() {
       b.dataset.key = `${p.index}:${d.id}`;
       const c = d.candidates[0];
       const loads = d.loads.map((l) => l.metric).join(", ");
-      b.innerHTML = `<div class="t">${esc(d.title)}</div>
+      b.innerHTML = `<div class="t"><span class="badge hidden"></span>${esc(d.title)}</div>
         <div class="s">${c ? esc(c.name) : '<span class="none">No calculator match</span>'}</div>
-        <div class="s">${esc(d.members.map((m) => m.imperial).slice(0, 3).join(" · "))}${loads ? " — " + esc(loads) : ""}</div>`;
+        <div class="s">${esc(d.members.map((m) => m.imperial).slice(0, 3).join(" · "))}${loads ? " — " + esc(loads) : ""}</div>
+        <div class="gl hidden"></div>`;
       b.onclick = () => selectDetail(p.index, d.id, false);
       g.append(b);
     }
@@ -167,7 +351,16 @@ async function selectDetail(pageIndex, detailId, autoSolve) {
   renderConversions(d);
   renderLoads(d);
   await renderCalculatorSelect(d);
-  if (autoSolve && d.candidates.length) solve();
+  const key = `${pageIndex}:${detailId}`;
+  const done = (state.job.results || {})[key];
+  if (done) {
+    if ([...$("#calc").options].some((o) => o.value === done.calculator.code)) $("#calc").value = done.calculator.code;
+    await renderCalcDetails(d);
+    if (done.calculator.preset) $("#preset").value = done.calculator.preset;
+    renderResult(done, key);
+  } else if (autoSolve && d.candidates.length) {
+    solve();
+  }
 }
 
 function renderConversions(d) {
@@ -210,7 +403,7 @@ function renderLoads(d) {
 
 async function loadCalculators() {
   if (!state.calculators.length) {
-    const r = await fetch("/api/calculators");
+    const r = await api("/api/calculators");
     if (r.ok) state.calculators = await r.json();
   }
   return state.calculators;
@@ -218,7 +411,7 @@ async function loadCalculators() {
 
 async function calcInfo(code) {
   if (!state.calcInfo[code]) {
-    const r = await fetch(`/api/calculators/${encodeURIComponent(code)}`);
+    const r = await api(`/api/calculators/${encodeURIComponent(code)}`);
     if (!r.ok) throw new Error((await r.json()).detail || "calculator lookup failed");
     state.calcInfo[code] = await r.json();
   }
@@ -296,24 +489,52 @@ async function solve() {
   const body = { job_id: state.job.id, page, detail_id: d.id, code: $("#calc").value, preset: $("#preset").value || null, roles, loads_kn: loads };
 
   state.solving = true;
+  renderSolveAll();
   const btn = $("#solve");
   btn.disabled = true;
   btn.textContent = "Solving on connectionshub… (up to a minute)";
   const res = $("#result");
   res.classList.remove("hidden");
   res.innerHTML = `<div class="muted">Creating the calculation and solving it…</div>`;
+  const key = `${page}:${d.id}`;
+  const before = ((state.job.results || {})[key] || {}).summary?.sheetId;
   try {
-    const r = await fetch("/api/solve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.detail || "Solve failed");
-    renderResult(data);
+    let data;
+    try {
+      const r = await api("/api/solve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Solve failed");
+    } catch (e) {
+      if (!(e instanceof TypeError)) throw e;
+      // The connection dropped (long request, sleep, flaky network). The server keeps solving and records
+      // the result on the job, so wait for it there rather than solving again.
+      res.innerHTML = `<div class="muted">Lost the connection while solving; waiting for the server to finish…</div>`;
+      data = await waitForResult(key, before);
+    }
+    (state.job.results ||= {})[key] = data;
+    renderResult(data, key);
+    renderSolveAll();
   } catch (e) {
     res.innerHTML = `<h3>Solve failed</h3><div class="error-box">${esc(e.message)}</div>`;
   } finally {
     state.solving = false;
     btn.disabled = false;
     btn.textContent = "Solve on connectionshub";
+    renderSolveAll();
   }
+}
+
+async function waitForResult(key, previousSheetId, timeoutMs = 180000) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const j = await (await fetch(`/api/jobs/${state.job.id}`)).json();
+      const res = (j.results || {})[key];
+      if (res && res.summary.sheetId !== previousSheetId) return res;
+    } catch { /* server still unreachable; keep waiting */ }
+  }
+  throw new Error("Lost the connection and no result arrived. Check the server is running, then solve again.");
 }
 
 function fmt(v, units) {
@@ -329,8 +550,12 @@ function metricOf(v, units) {
   return "";
 }
 
-function renderResult(data) {
+function renderResult(data, key) {
   const s = data.summary;
+  const box = $("#result");
+  box.classList.remove("hidden");
+  box.dataset.key = key || "";
+  box.dataset.sheet = s.sheetId || "";
   const g = s.governingLoad;
   const util = typeof s.utilization === "number" ? s.utilization : null;
   const parts = [];

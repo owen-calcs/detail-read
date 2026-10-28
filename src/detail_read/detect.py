@@ -59,13 +59,11 @@ class Detail:
     candidates: list[Candidate] = field(default_factory=list)
 
 
-def _center(b) -> tuple[float, float]:
-    return (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-
-
 def _dist(a, b, aspect: float) -> float:
-    (ax, ay), (bx, by) = _center(a), _center(b)
-    return math.hypot((ax - bx) * aspect, ay - by)
+    """Gap between two boxes (0 if they overlap). Centre distance would penalise long callout lines."""
+    dx = max(b[0] - a[2], a[0] - b[2], 0.0)
+    dy = max(b[1] - a[3], a[1] - b[3], 0.0)
+    return math.hypot(dx * aspect, dy)
 
 
 def _keywords(lines: list[dict]) -> set[str]:

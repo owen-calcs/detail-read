@@ -9,7 +9,21 @@
 <body>
   <header class="bar">
     <div class="brand">Detail Read <span class="sub">metric drawing → imperial → connectionshub</span></div>
-    <div id="status" class="status"></div>
+    <div class="bar-right">
+      <div id="status" class="status"></div>
+      <div class="keybox">
+        <button id="key-btn" class="key-btn" aria-expanded="false" aria-controls="key-panel"></button>
+        <form id="key-panel" class="key-panel hidden" autocomplete="off">
+          <label for="key-input">connectionshub API key</label>
+          <input id="key-input" type="password" placeholder="Paste your key" spellcheck="false">
+          <p id="key-help" class="key-help">Saved in this browser only and sent only to this Detail Read server, which uses it to run calculations in your Calcs.com connectionshub account.</p>
+          <div class="key-actions">
+            <button type="submit" class="primary">Save key</button>
+            <button type="button" id="key-clear" class="link">Remove</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </header>
 
   <main class="layout">
@@ -20,6 +34,11 @@
         <span>or click to choose. Any drawing set: pages are OCR'd, metric callouts converted to imperial.</span>
       </label>
       <div id="progress" class="progress hidden"><div class="fill"></div><span class="label"></span></div>
+      <div id="solve-all" class="solve-all hidden">
+        <button id="solve-all-btn" class="primary"></button>
+        <div id="solve-all-progress" class="progress hidden"><div class="fill"></div><span class="label"></span></div>
+        <div id="solve-all-summary" class="sa-summary"></div>
+      </div>
       <nav id="pages" class="pages"></nav>
     </aside>
 
